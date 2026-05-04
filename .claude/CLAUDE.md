@@ -1,0 +1,3 @@
+- Minimize external dependencies.
+- Store asset files as plain text and NetCDF.
+- Maintain general interface to the package with internal consistency where possible between benchmarks.
