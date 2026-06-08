@@ -19,20 +19,70 @@ using NCDatasets
 #     velocity solution leave this unimplemented.
 # ----------------------------------------------------------------------
 
+"""
+    AbstractBenchmark
+
+Supertype of every benchmark spec in this package. Concrete subtypes
+carry the parameters of a benchmark (grid axes, forcing parameters,
+Glen-flow parameters, …) and implement the small interface
+documented under [`state`](@ref), [`write_fixture!`](@ref), and
+optionally [`analytical_velocity`](@ref).
+"""
 abstract type AbstractBenchmark end
 
-function state end           # state(b::AbstractBenchmark, t::Real) -> NamedTuple
-function write_fixture! end  # write_fixture!(b, path; times=[t]) -> Vector{String}
+"""
+    state(b::AbstractBenchmark, t::Real) -> NamedTuple
+
+Analytical state of benchmark `b` at time `t` (years). Returns a
+`NamedTuple` keyed by ice-sheet schema names — see the
+[Interface](@ref "The `AbstractBenchmark` interface") page for the
+catalogue of keys. Benchmarks without a closed-form solution may
+restrict to `t = 0` (initial condition) and error otherwise.
+"""
+function state end
+
+"""
+    write_fixture!(b::AbstractBenchmark, path; times=[t]) -> Vector{String}
+
+Serialise `state(b, t)` at one or more times to a NetCDF restart at
+`path`. Returns the vector of file paths written. Some benchmarks
+support only a single time.
+"""
+function write_fixture! end
+
+"""
+    analytical_velocity(b::AbstractBenchmark, t::Real) -> (ux_bar, uy_bar)
+
+Closed-form depth-averaged ice-velocity field. `ux_bar` is shape
+`(Nx+1, Ny)` and `uy_bar` is `(Nx, Ny+1)` (face-staggered). Only
+implemented for benchmarks with a known analytical solution
+(currently [`BuelerBenchmark`](@ref)). The fallback throws an
+informative error.
+"""
 function analytical_velocity end
 
 analytical_velocity(b::AbstractBenchmark, t::Real) = error(
     "analytical_velocity not implemented for $(typeof(b)). " *
     "Use a concrete benchmark subtype with a closed-form velocity solution.")
 
-# Calving-law hooks. The model-agnostic skeleton is declared here so the
-# `YelmoBenchmarks` package extension can extend them; a non-Yelmo host
-# can extend them with array-only overloads.
+"""
+    calvmip_exp1!(cr_x, cr_y, u_bar, v_bar, H_ice, f_ice, lsf, time;
+                  xc, yc, r_lim = 750e3)
+
+In-place velocity-equilibrium calving-rate law for CalvingMIP Exp1/Exp3.
+Skeleton declared here so hosts (or the `YelmoBenchmarks` extension)
+can extend it. See the [CalvingMIP page](@ref "CalvingMIP") for the
+arguments and staggered shapes.
+"""
 function calvmip_exp1! end
+
+"""
+    calvmip_exp2!(cr_x, cr_y, u_bar, v_bar, H_ice, f_ice, lsf, time;
+                  xc, yc)
+
+In-place oscillating-front calving-rate law for CalvingMIP Exp2/Exp4.
+Skeleton declared here so hosts can extend it.
+"""
 function calvmip_exp2! end
 
 export AbstractBenchmark
