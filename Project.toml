@@ -1,19 +1,29 @@
 name = "IceSheetBenchmarks"
 uuid = "8c4d0a2e-6f3b-4e0a-9f6e-1e2d3a4b5c6d"
-authors = ["Alexander Robinson <alexander.robinson@awi.de>"]
 version = "0.1.0"
+authors = ["Alexander Robinson <alexander.robinson@awi.de>", "Jan Swierczek-Jereczek <janswier@ucm.es>"]
 
 [deps]
+DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
+DocumenterCitations = "daee34ce-89f3-4625-b898-19384cb65244"
 NCDatasets = "85f8d34a-cbdd-5861-8df4-14fed0d494ab"
 
 [weakdeps]
-Yelmo = "f480e141-c095-4a5e-9e4c-f8685db772bc"
 Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
+Yelmo = "f480e141-c095-4a5e-9e4c-f8685db772bc"
 
 [extensions]
-# The extension only really needs Yelmo, but Yelmo's grid-construction
-# helpers re-route through Oceananigans types we import directly. Both
-# are listed as triggers so the extension activates only when both are
-# already loaded — since Yelmo depends on Oceananigans, that's
-# effectively "when Yelmo is loaded".
 YelmoBenchmarks = ["Yelmo", "Oceananigans"]
+
+[compat]
+DocStringExtensions = "0.9.5"
+DocumenterCitations = "1.4.1"
+NCDatasets = "0.14, 0.15"
+julia = "1.10"
+
+[extras]
+NCDatasets = "85f8d34a-cbdd-5861-8df4-14fed0d494ab"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test", "NCDatasets"]

@@ -60,7 +60,7 @@ function _group_for_var(key::Symbol, v_meta)
     return nothing
 end
 
-_default_alias(b::AbstractBenchmark, t::Real) = "$(typeof(b))_t$(Int(round(t)))"
+_default_alias(b::AbstractBenchmark, t::Real) = "$(nameof(typeof(b)))_t$(Int(round(t)))"
 
 function _assign_field!(field, arr::AbstractArray)
     iv = interior(field)

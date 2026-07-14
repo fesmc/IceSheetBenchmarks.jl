@@ -45,10 +45,7 @@
 # ----------------------------------------------------------------------
 
 """
-    HOMCBenchmark(variant::Symbol = :C; L_km=80.0, dx_km=L_km*0.025,
-                  alpha_deg=0.1, A_glen=1e-16, n_glen=3.0,
-                  beta0=1000.0, beta_amp=1000.0,
-                  rho_ice=910.0, g=9.81)
+$(TYPEDSIGNATURES)
 
 ISMIP-HOM Experiment C benchmark struct. Carries domain axes, slope,
 material parameters, and basal-friction perturbation parameters.
@@ -121,7 +118,7 @@ function HOMCBenchmark(variant::Symbol = :C;
 end
 
 """
-    state(b::HOMCBenchmark, t::Real) -> NamedTuple
+$(TYPEDSIGNATURES)
 
 Analytical IC at time `t`. Returns a NamedTuple with:
   - `xc`, `yc`     — grid axes (metres).
@@ -155,19 +152,13 @@ function state(b::HOMCBenchmark, t::Real)
             smb_ref = smb, T_srf = Tsrf, Q_geo = Qgeo)
 end
 
-# Default zeta axes for HOM-C analytical fixture. Match the BUELER
-# default (uniform 11-point ice / 5-point rock) so the file-based
-# constructor uses identical layer geometry.
-const _HOMC_DEFAULT_ZETA_AC      = collect(range(0.0, 1.0; length=11))
-const _HOMC_DEFAULT_ZETA_ROCK_AC = collect(range(0.0, 1.0; length=5))
-
 """
-    write_fixture!(b::HOMCBenchmark, path::AbstractString;
-                   times = [0.0]) -> Vector{String}
+$(TYPEDSIGNATURES)
 
 Serialise the analytical HOM-C IC at time `t = first(times)` to a
 NetCDF restart at `path`. Single-time only (HOM-C has no time
-evolution at the IC level — β is steady, geometry is steady).
+evolution at the IC level — β is steady, geometry is steady). Uses the
+default uniform 11-point ice / 5-point rock sigma axes.
 
 Returns a 1-element `Vector{String}` containing `path`.
 """
@@ -177,94 +168,32 @@ function write_fixture!(b::HOMCBenchmark, path::AbstractString;
         error("write_fixture!(HOMCBenchmark, …): multi-time fixtures " *
               "not supported (got $(length(times)) times).")
     t = Float64(first(times))
-
     s = state(b, t)
-    mkpath(dirname(path))
-    isfile(path) && rm(path)
 
-    NCDataset(path, "c") do ds
-        Nx = length(b.xc)
-        Ny = length(b.yc)
-        zeta_ac      = _HOMC_DEFAULT_ZETA_AC
-        zeta_rock_ac = _HOMC_DEFAULT_ZETA_ROCK_AC
-        Nz_ac      = length(zeta_ac)
-        Nz_rock_ac = length(zeta_rock_ac)
-
-        defDim(ds, "xc",          Nx)
-        defDim(ds, "yc",          Ny)
-        defDim(ds, "zeta",        Nz_ac - 1)
-        defDim(ds, "zeta_ac",     Nz_ac)
-        defDim(ds, "zeta_rock",   Nz_rock_ac - 1)
-        defDim(ds, "zeta_rock_ac", Nz_rock_ac)
-
-        xv = defVar(ds, "xc", Float64, ("xc",))
-        xv[:] = b.xc ./ 1e3
-        xv.attrib["units"] = "km"
-
-        yv = defVar(ds, "yc", Float64, ("yc",))
-        yv[:] = b.yc ./ 1e3
-        yv.attrib["units"] = "km"
-
-        zc = defVar(ds, "zeta", Float64, ("zeta",))
-        zc[:] = 0.5 .* (zeta_ac[1:end-1] .+ zeta_ac[2:end])
-        zc.attrib["units"] = "1"
-
-        zac = defVar(ds, "zeta_ac", Float64, ("zeta_ac",))
-        zac[:] = zeta_ac
-        zac.attrib["units"] = "1"
-
-        zrc = defVar(ds, "zeta_rock", Float64, ("zeta_rock",))
-        zrc[:] = 0.5 .* (zeta_rock_ac[1:end-1] .+ zeta_rock_ac[2:end])
-        zrc.attrib["units"] = "1"
-
-        zrac = defVar(ds, "zeta_rock_ac", Float64, ("zeta_rock_ac",))
-        zrac[:] = zeta_rock_ac
-        zrac.attrib["units"] = "1"
-
-        Hv = defVar(ds, "H_ice", Float64, ("xc", "yc"))
-        Hv[:, :] = s.H_ice
-        Hv.attrib["units"]     = "m"
-        Hv.attrib["long_name"] = "Ice thickness (HOM-C uniform slab)"
-
-        zb = defVar(ds, "z_bed", Float64, ("xc", "yc"))
-        zb[:, :] = s.z_bed
-        zb.attrib["units"]     = "m"
-        zb.attrib["long_name"] = "Bedrock elevation (sloping bed, alpha=0.1°)"
-
-        zslv = defVar(ds, "z_sl", Float64, ("xc", "yc"))
-        zslv[:, :] = s.z_sl
-        zslv.attrib["units"]     = "m"
-        zslv.attrib["long_name"] = "Sea level (very negative — keeps ice grounded)"
-
-        smbv = defVar(ds, "smb_ref", Float64, ("xc", "yc"))
-        smbv[:, :] = s.smb_ref
-        smbv.attrib["units"]     = "m/yr"
-        smbv.attrib["long_name"] = "Surface mass balance (zero for HOM-C)"
-
-        Tv = defVar(ds, "T_srf", Float64, ("xc", "yc"))
-        Tv[:, :] = s.T_srf
-        Tv.attrib["units"]     = "K"
-        Tv.attrib["long_name"] = "Surface temperature (HOM-C is isothermal)"
-
-        Qv = defVar(ds, "Q_geo", Float64, ("xc", "yc"))
-        Qv[:, :] = s.Q_geo
-        Qv.attrib["units"]     = "mW m^-2"
-        Qv.attrib["long_name"] = "Geothermal flux (arbitrary; isothermal test)"
-
-        ds.attrib["benchmark"]      = "ISMIPHOM-$(string(b.variant))"
-        ds.attrib["solution_type"]  = "analytical-IC"
-        ds.attrib["time_yr"]        = t
-        ds.attrib["L_km"]           = b.L_km
-        ds.attrib["dx_km"]          = b.dx_km
-        ds.attrib["alpha_deg"]      = b.alpha_rad * 180.0 / π
-        ds.attrib["H_m"]            = b.H
-        ds.attrib["A_glen_Pa-3yr-1"] = b.A_glen
-        ds.attrib["n_glen"]         = b.n_glen
-        ds.attrib["beta0"]          = b.beta0
-        ds.attrib["beta_amp"]       = b.beta_amp
-    end
-
-    return [path]
+    vars = (
+        ("H_ice",   s.H_ice,   "m",       "Ice thickness (HOM-C uniform slab)"),
+        ("z_bed",   s.z_bed,   "m",       "Bedrock elevation (sloping bed, alpha=0.1°)"),
+        ("z_sl",    s.z_sl,    "m",       "Sea level (very negative — keeps ice grounded)"),
+        ("smb_ref", s.smb_ref, "m/yr",    "Surface mass balance (zero for HOM-C)"),
+        ("T_srf",   s.T_srf,   "K",       "Surface temperature (HOM-C is isothermal)"),
+        ("Q_geo",   s.Q_geo,   "mW m^-2", "Geothermal flux (arbitrary; isothermal test)"),
+    )
+    attrs = (
+        "benchmark"       => "ISMIPHOM-$(string(b.variant))",
+        "solution_type"   => "analytical-IC",
+        "time_yr"         => t,
+        "L_km"            => b.L_km,
+        "dx_km"           => b.dx_km,
+        "alpha_deg"       => b.alpha_rad * 180.0 / π,
+        "H_m"             => b.H,
+        "A_glen_Pa-3yr-1" => b.A_glen,
+        "n_glen"          => b.n_glen,
+        "beta0"           => b.beta0,
+        "beta_amp"        => b.beta_amp,
+    )
+    return _write_restart!(path, b.xc, b.yc,
+                           _DEFAULT_ZETA_AC, _DEFAULT_ZETA_ROCK_AC,
+                           vars, attrs)
 end
 
 # Closed-form β at an (x_m, y_m) point (metres):

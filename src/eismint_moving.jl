@@ -27,13 +27,22 @@
 # ----------------------------------------------------------------------
 
 """
-    EISMINT1MovingBenchmark(; dx_km=50.0, L_km=1500.0,
-                              R_el_km=450.0, smb_max=0.5,
-                              smb_grad=0.01, T_srf_const=270.0,
-                              Q_geo_const=42.0,
-                              n_glen=3.0, A_glen=1e-16)
+$(TYPEDSIGNATURES)
 
-EISMINT-1 moving-margin benchmark spec.
+EISMINT-1 moving-margin benchmark [huybrechts_eismint_1996](@citep).
+
+# Fields
+ - `xc`, `yc` : cell-centre x/y coordinates (m)
+ - `L_km`     : domain extent (km). Default 1500 km.
+ - `dx_km`    : cell size (km). Default 50 km.
+ - `x_summit`, `y_summit` : summit coordinates (m)
+ - `R_el_km`  : radial extent of positive smb (km). Default 450 km.
+ - `smb_max`  : maximum smb (m/yr). Default 0.5 m/yr.
+ - `smb_grad` : radial smb gradient (m/yr/km). Default 0.01 m/yr/km.
+ - `T_srf_const` : surface temperature (K). Default 270 K.
+ - `Q_geo_const` : geothermal flux (mW/m²). Default 42 mW/m².
+ - `n_glen` : Glen exponent. Default 3.
+ - `A_glen` : Glen flow factor (Pa⁻³ yr⁻¹). Default 1e-16 Pa⁻³ yr⁻¹.
 """
 struct EISMINT1MovingBenchmark <: AbstractBenchmark
     xc::Vector{Float64}      # cell-centre x [m]
@@ -83,11 +92,15 @@ function EISMINT1MovingBenchmark(; dx_km::Real        = 50.0,
 end
 
 """
-    eismint_moving_smb(b::EISMINT1MovingBenchmark, x_m, y_m) -> Float64
+$(TYPEDSIGNATURES)
 
 Surface mass balance at point `(x, y)` in metres:
 
+```julia
     smb = min(smb_max, smb_grad · (R_el_km − dist_km))
+```
+
+where `dist_km` is the radial distance from the summit in kilometres.
 """
 @inline function eismint_moving_smb(b::EISMINT1MovingBenchmark, x_m::Real, y_m::Real)
     dist_km = sqrt((x_m - b.x_summit)^2 + (y_m - b.y_summit)^2) / 1e3
@@ -95,7 +108,7 @@ Surface mass balance at point `(x, y)` in metres:
 end
 
 """
-    state(b::EISMINT1MovingBenchmark, t) -> NamedTuple
+$(TYPEDSIGNATURES)
 
 Analytical zero-ice IC at `t = 0`. Returns a NamedTuple of model-agnostic
 fields keyed by `:xc, :yc, :H_ice, :z_bed, :z_sl, :smb_ref, :T_srf,
@@ -142,7 +155,7 @@ function _eismint_moving_analytical_state(b::EISMINT1MovingBenchmark)
             mask_ice = mask_ice, calv_mask = calv_mask)
 end
 
-# Default zeta axes for the analytical fixture writer.
+# Default zeta axes for the analytical fixture writer (31 aa layers).
 const _EISMINT_MOVING_NZ_AA = 31
 function _eismint_moving_zeta_ac()
     nz_aa = _EISMINT_MOVING_NZ_AA
@@ -150,10 +163,9 @@ function _eismint_moving_zeta_ac()
     zeta_ac = vcat(0.0, 0.5*(zeta_aa[1:end-1].+zeta_aa[2:end]), 1.0)
     return zeta_aa, zeta_ac
 end
-const _EISMINT_MOVING_DEFAULT_ZETA_ROCK_AC = collect(range(0.0, 1.0; length=5))
 
 """
-    write_fixture!(b::EISMINT1MovingBenchmark, path; times=[0.0]) -> Vector{String}
+$(TYPEDSIGNATURES)
 
 Write the analytical zero-ice IC at `t = 0` to `path` as a NetCDF
 restart. Multi-time fixtures (`t > 0`) require a forward simulation
@@ -179,66 +191,36 @@ function _write_eismint_moving_analytical_fixture!(b::EISMINT1MovingBenchmark,
                                                      path::AbstractString,
                                                      t::Float64)
     s = _eismint_moving_analytical_state(b)
-    mkpath(dirname(path))
-    isfile(path) && rm(path)
-
     _, zeta_ac = _eismint_moving_zeta_ac()
-    zeta_rock_ac = _EISMINT_MOVING_DEFAULT_ZETA_ROCK_AC
-    Nz_ac      = length(zeta_ac)
-    Nz_rock_ac = length(zeta_rock_ac)
-    Nx, Ny = length(b.xc), length(b.yc)
 
-    NCDataset(path, "c") do ds
-        defDim(ds, "xc", Nx); defDim(ds, "yc", Ny)
-        defDim(ds, "zeta", Nz_ac - 1); defDim(ds, "zeta_ac", Nz_ac)
-        defDim(ds, "zeta_rock", Nz_rock_ac - 1)
-        defDim(ds, "zeta_rock_ac", Nz_rock_ac)
-
-        xv = defVar(ds, "xc", Float64, ("xc",))
-        xv[:] = b.xc ./ 1e3; xv.attrib["units"] = "km"
-        yv = defVar(ds, "yc", Float64, ("yc",))
-        yv[:] = b.yc ./ 1e3; yv.attrib["units"] = "km"
-        zc = defVar(ds, "zeta", Float64, ("zeta",))
-        zc[:] = 0.5 .* (zeta_ac[1:end-1] .+ zeta_ac[2:end]); zc.attrib["units"] = "1"
-        zac = defVar(ds, "zeta_ac", Float64, ("zeta_ac",))
-        zac[:] = zeta_ac; zac.attrib["units"] = "1"
-        zrc = defVar(ds, "zeta_rock", Float64, ("zeta_rock",))
-        zrc[:] = 0.5 .* (zeta_rock_ac[1:end-1] .+ zeta_rock_ac[2:end])
-        zrc.attrib["units"] = "1"
-        zrac = defVar(ds, "zeta_rock_ac", Float64, ("zeta_rock_ac",))
-        zrac[:] = zeta_rock_ac; zrac.attrib["units"] = "1"
-
-        for (name, data, units, longname) in (
-            ("H_ice",       s.H_ice,       "m",        "Ice thickness (zero IC)"),
-            ("z_bed",       s.z_bed,       "m",        "Bedrock elevation (flat)"),
-            ("z_sl",        s.z_sl,        "m",        "Sea level"),
-            ("smb_ref",     s.smb_ref,     "m/yr",     "Surface mass balance (radial moving-margin pattern)"),
-            ("T_srf",       s.T_srf,       "K",        "Surface temperature"),
-            ("Q_geo",       s.Q_geo,       "mW m^-2",  "Geothermal flux"),
-            ("bmb_shlf",    s.bmb_shlf,    "m/yr",     "Shelf bmb (zero)"),
-            ("T_shlf",      s.T_shlf,      "K",        "Shelf base temperature"),
-            ("H_sed",       s.H_sed,       "m",        "Sediment thickness (zero)"),
-            ("mask_ice",    s.mask_ice,    "1",        "Ice mask (0=none, 1=fixed, 2=dynamic)"),
-            ("calv_mask",   s.calv_mask,   "1",        "Calving mask (zero)"),
-        )
-            v = defVar(ds, name, Float64, ("xc", "yc"))
-            v[:, :] = data
-            v.attrib["units"]     = units
-            v.attrib["long_name"] = longname
-        end
-
-        ds.attrib["benchmark"]     = "EISMINT1-moving"
-        ds.attrib["solution_type"] = "analytical-IC"
-        ds.attrib["time_yr"]       = t
-        ds.attrib["L_km"]          = b.L_km
-        ds.attrib["dx_km"]         = b.dx_km
-        ds.attrib["R_el_km"]       = b.R_el_km
-        ds.attrib["smb_max"]       = b.smb_max
-        ds.attrib["smb_grad"]      = b.smb_grad
-        ds.attrib["T_srf_K"]       = b.T_srf_const
-        ds.attrib["Q_geo_mWm2"]    = b.Q_geo_const
-        ds.attrib["n_glen"]        = b.n_glen
-        ds.attrib["A_glen_Pa-3yr-1"] = b.A_glen
-    end
-    return [path]
+    vars = (
+        ("H_ice",     s.H_ice,     "m",       "Ice thickness (zero IC)"),
+        ("z_bed",     s.z_bed,     "m",       "Bedrock elevation (flat)"),
+        ("z_sl",      s.z_sl,      "m",       "Sea level"),
+        ("smb_ref",   s.smb_ref,   "m/yr",    "Surface mass balance (radial moving-margin pattern)"),
+        ("T_srf",     s.T_srf,     "K",       "Surface temperature"),
+        ("Q_geo",     s.Q_geo,     "mW m^-2", "Geothermal flux"),
+        ("bmb_shlf",  s.bmb_shlf,  "m/yr",    "Shelf bmb (zero)"),
+        ("T_shlf",    s.T_shlf,    "K",       "Shelf base temperature"),
+        ("H_sed",     s.H_sed,     "m",       "Sediment thickness (zero)"),
+        ("mask_ice",  s.mask_ice,  "1",       "Ice mask (0=none, 1=fixed, 2=dynamic)"),
+        ("calv_mask", s.calv_mask, "1",       "Calving mask (zero)"),
+    )
+    attrs = (
+        "benchmark"       => "EISMINT1-moving",
+        "solution_type"   => "analytical-IC",
+        "time_yr"         => t,
+        "L_km"            => b.L_km,
+        "dx_km"           => b.dx_km,
+        "R_el_km"         => b.R_el_km,
+        "smb_max"         => b.smb_max,
+        "smb_grad"        => b.smb_grad,
+        "T_srf_K"         => b.T_srf_const,
+        "Q_geo_mWm2"      => b.Q_geo_const,
+        "n_glen"          => b.n_glen,
+        "A_glen_Pa-3yr-1" => b.A_glen,
+    )
+    return _write_restart!(path, b.xc, b.yc,
+                           zeta_ac, _DEFAULT_ZETA_ROCK_AC,
+                           vars, attrs)
 end

@@ -47,14 +47,18 @@ zb_y(y)     = dc / (1 + exp(−2(y − wc) / fc))
 with `zb_deep = −720 m`. The cross-section is a parabolic reverse slope
 in `x` with a central trough bordered by raised embayments in `y`.
 
-`state(b, t)` is **not** implemented in the core package — hosts
-populate the geometry via the helper `IceSheetBenchmarks._trough_f17_zbed`
-and fill the climate fields (`smb_const`, `Tsrf_const`, `Qgeo_const`)
-uniformly from the struct.
+`state(b, 0)` returns the closed-form trough bed, zero ice, sea level
+at 0, and the uniform climate fields (`smb_const`, `Tsrf_const`
+converted to K, `Qgeo_const`). There is no closed-form transient
+solution, so `state(b, t > 0)` errors; hosts obtain non-zero times by
+running the model forward.
 
 ```julia
 b = TroughBenchmark(:F17; dx_km = 4.0)
-# Build z_bed directly from the closed form (km units):
+s = state(b, 0.0)
+# s.z_bed (F17 trough), s.H_ice = 0, s.smb_ref = 0.3 m/yr, s.T_srf, s.Q_geo
+
+# The bed helper is also exposed directly (km units):
 z_bed = [IceSheetBenchmarks._trough_f17_zbed(b.xc[i]/1e3, b.yc[j]/1e3,
                                               b.fc_km, b.dc_m, b.wc_km)
          for i in eachindex(b.xc), j in eachindex(b.yc)]

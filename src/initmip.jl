@@ -5,13 +5,13 @@
 # Oceananigans grid. All physical fields (topography, climate, GHF) are
 # loaded separately in run.jl via init_topo_load! / data_load!.
 
-struct InitMIPBenchmark <: AbstractBenchmark
-    xc::Vector{Float64}   # cell-centre x [m]
-    yc::Vector{Float64}   # cell-centre y [m]
+Base.@kwdef struct InitMIPBenchmark{T<:AbstractFloat} <: AbstractBenchmark
+    xc::Vector{T}   # cell-centre x [m]
+    yc::Vector{T}   # cell-centre y [m]
 end
 
 """
-    InitMIPBenchmark(regions_nc::AbstractString) -> InitMIPBenchmark
+$(TYPEDSIGNATURES)
 
 Read `xc`/`yc` coordinates from a REGIONS NetCDF file and construct the
 benchmark. Coordinates are converted to metres if the file stores them
@@ -30,6 +30,27 @@ function InitMIPBenchmark(regions_nc::AbstractString)
     end
 end
 
+"""
+$(TYPEDSIGNATURES)
+
+Grid-only state `(xc, yc)`. InitMIP uses real-data forcing (topography,
+climate, geothermal flux) that the host loads via its own data I/O, so
+no physical fields are produced here at any `t`.
+"""
 function state(b::InitMIPBenchmark, ::Real)
     return (xc = b.xc, yc = b.yc)
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Not supported: InitMIP is a real-data benchmark with no analytical
+state to serialise. Construct it from a `REGIONS.nc` file and let the
+host load the physical fields directly. Throws an informative error.
+"""
+function write_fixture!(::InitMIPBenchmark, path::AbstractString;
+                        times::AbstractVector{<:Real} = [0.0])
+    error("write_fixture!(InitMIPBenchmark, …): InitMIP has no analytical " *
+          "fixture — it is a real-data benchmark. Load the physical fields " *
+          "from the source dataset via the host's data I/O instead.")
 end

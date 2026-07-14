@@ -1,0 +1,7 @@
+- [x] Loosen the type structure. I want something like EISMINT1MovingBenchmark{T}. Also, I feel like the code could be more compact and legible with the use of @kwdef. Apply this to all benchmark structs.
+- [ ] The code include large comment sections that are there for documenting purposes. If the info they contain is are already in the docstrings, remove the comment. If not, include it in the docstring and remove the comment.
+- [ ] Replace any citation with the appropriate [key](@citep) or [key](@citet) taking the key from references.bib.
+- [ ] Please use $(TYPEDSIGNATURES) where possible. This makes the docs easier to maintain. Furthermore, many functions have too specific signatures (e.g. bueler_test_BC!), which looks a bit confusing. 
+- [ ] I feel like handling the :B or :C option of the Bueler Benchmark could be handled via an abstract type + 2 subtypes to dispatch on.
+- [ ] Rename BuelerBenchmark to HalfarDomeBenchmark.
+- [ ] Are we missing important benchmarks from ice-sheet modelling?

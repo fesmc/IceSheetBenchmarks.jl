@@ -1,7 +1,7 @@
 # ----------------------------------------------------------------------
 # Bueler analytical ice-flow solutions, ported from Yelmo Fortran
 # (`yelmo/tests/ice_benchmarks.f90`), and the corresponding
-# `BuelerBenchmark <: AbstractBenchmark` implementation of the
+# `HalfarDomeBenchmark <: AbstractBenchmark` implementation of the
 # AbstractBenchmark interface.
 #
 # Math layer:
@@ -14,7 +14,7 @@
 #       analytical mass balance.
 #
 # Benchmark layer:
-#   - `BuelerBenchmark`  : carries grid axes + Halfar parameters,
+#   - `HalfarDomeBenchmark`  : carries grid axes + Halfar parameters,
 #       implements `state` / `write_fixture!` / `analytical_velocity`.
 #
 # Units: `xc`/`yc` in metres, `H` in metres, `mbal` in m/yr,
@@ -28,7 +28,7 @@
 # ----------------------------------------------------------------------
 
 """
-    bueler_gamma(A, n, rho_ice, g) -> γ
+$(TYPEDSIGNATURES)
 
 SIA flow prefactor `γ = 2 A (ρ_i g)^n / (n + 2)`. With Yelmo defaults
 (`A = 1e-16` Pa⁻³ yr⁻¹, `n = 3`, `ρ_i = 910`, `g = 9.81`) this gives
@@ -37,9 +37,7 @@ SIA flow prefactor `γ = 2 A (ρ_i g)^n / (n + 2)`. With Yelmo defaults
 @inline bueler_gamma(A, n, rho_ice, g) = 2.0 * A * (rho_ice * g)^n / (n + 2.0)
 
 """
-    bueler_test_BC!(H_ice, mbal, xc, yc, time;
-                    R0=750.0, H0=3600.0, lambda=0.0,
-                    n=3.0, A=1e-16, rho_ice=910.0, g=9.81)
+$(TYPEDSIGNATURES)
 
 Halfar similarity solution for the isothermal-SIA dome. Mutates
 `H_ice` (m) and `mbal` (m/yr) in-place at every (xc[i], yc[j]) point.
@@ -58,14 +56,14 @@ shift is added inside the formula via the (R0, H0) dome scale.
 Port of `yelmo/tests/ice_benchmarks.f90:167 bueler_test_BC`.
 """
 function bueler_test_BC!(H_ice::AbstractMatrix{<:Real},
-                         mbal::AbstractMatrix{<:Real},
-                         xc::AbstractVector{<:Real},
-                         yc::AbstractVector{<:Real},
-                         time::Real;
-                         R0::Real=750.0, H0::Real=3600.0,
-                         lambda::Real=0.0, n::Real=3.0,
-                         A::Real=1e-16,
-                         rho_ice::Real=910.0, g::Real=9.81)
+    mbal::AbstractMatrix{<:Real},
+    xc::AbstractVector{<:Real},
+    yc::AbstractVector{<:Real},
+    time::Real;
+    R0::Real=750.0, H0::Real=3600.0,
+    lambda::Real=0.0, n::Real=3.0,
+    A::Real=1e-16,
+    rho_ice::Real=910.0, g::Real=9.81)
     Nx, Ny = length(xc), length(yc)
     size(H_ice) == (Nx, Ny) ||
         error("bueler_test_BC!: H_ice has shape $(size(H_ice)); expected ($Nx, $Ny).")
@@ -89,84 +87,86 @@ function bueler_test_BC!(H_ice::AbstractMatrix{<:Real},
         # clamps the flank to zero outside the moving margin.
         fac = max(0.0, 1.0 - ((t1 / t0)^(-β) * r / R0_m)^((n + 1.0) / n))
         H_ice[i, j] = H0 * (t1 / t0)^(-α) * fac^(n / (2.0 * n + 1.0))
-        mbal[i, j]  = (lambda / t1) * H_ice[i, j]
+        mbal[i, j] = (lambda / t1) * H_ice[i, j]
     end
 
     return H_ice, mbal
 end
 
 # ----------------------------------------------------------------------
-# BuelerBenchmark — concrete AbstractBenchmark implementation.
+# HalfarDomeBenchmark — concrete AbstractBenchmark implementation.
 # ----------------------------------------------------------------------
 
 """
-    BuelerBenchmark(variant::Symbol; dx_km, R0_km=750.0, H0=3600.0,
-                    lambda=nothing, n=3.0, A=1e-16, rho_ice=910.0, g=9.81)
+$(TYPEDSIGNATURES)
 
-Halfar dome benchmark (Bueler et al. 2005). `variant`:
+Halfar dome benchmark (Bueler et al. 2005).
 
-  - `:B` — pure Halfar decay (no mass balance, `λ = 0`). The default.
-  - `:C` — Halfar + analytical mass balance `mbal = λ H / t`. Requires
-           `lambda` to be passed explicitly.
-
-`dx_km` is the cell width in km; the grid is square and centered on
-the dome with `Nx = Ny = 2 R0_km / dx_km + 1` points spanning
-`[-R0_km e3, +R0_km e3]` in metres.
-
-Other physical constants default to the Yelmo Fortran defaults from
-`yelmo_benchmarks.f90:233-238`.
+# Fields:
+ - `variant` : Benchmark variant.
+    - :B = pure Halfar decay (no mass balance, `λ = 0`). The default. or :C)
+    - `:C` — Halfar + analytical mass balance `mbal = λ H / t`. Requires `lambda` to be passed explicitly.
+ - `xc`, `yc` : cell-centre x/y coordinates (m)
+ - `R0_km` : Halfar dome radius (km). Default 750 km.
+ - `H0` : Halfar dome height (m). Default 3600 m.
+ - `lambda` : mass-balance scale (dimensionless). Default 0.0 for variant :B; must be > 0 for variant :C.
+ - `n` : Glen exponent. Default 3.
+ - `A` : Glen flow factor (Pa⁻³ yr⁻¹). Default 1e-16 Pa⁻³ yr⁻¹.
+ - `rho_ice` : ice density (kg/m³). Default 910 kg/m³.
+ - `g` : gravitational acceleration (m/s²). Default 9.81 m/s².
 """
-struct BuelerBenchmark <: AbstractBenchmark
+struct HalfarDomeBenchmark{T<:AbstractFloat} <: AbstractBenchmark
     variant::Symbol
-    xc::Vector{Float64}
-    yc::Vector{Float64}
-    R0_km::Float64
-    H0::Float64
-    lambda::Float64
-    n::Float64
-    A::Float64
-    rho_ice::Float64
-    g::Float64
+    xc::Vector{T}
+    yc::Vector{T}
+    R0_km::T
+    H0::T
+    lambda::T
+    n::T
+    A::T
+    rho_ice::T
+    g::T
 end
 
-function BuelerBenchmark(variant::Symbol;
-                         dx_km::Real,
-                         R0_km::Real = 750.0,
-                         H0::Real    = 3600.0,
-                         lambda      = nothing,
-                         n::Real     = 3.0,
-                         A::Real     = 1e-16,
-                         rho_ice::Real = 910.0,
-                         g::Real     = 9.81)
+function HalfarDomeBenchmark(variant::Symbol;
+    dx_km::Real,
+    R0_km::Real=750.0,
+    H0::Real=3600.0,
+    lambda=nothing,
+    n::Real=3.0,
+    A::Real=1e-16,
+    rho_ice::Real=910.0,
+    g::Real=9.81)
     variant in (:B, :C) || error(
-        "BuelerBenchmark: variant must be :B or :C, got $(variant).")
+        "HalfarDomeBenchmark: variant must be :B or :C, got $(variant).")
 
     if variant === :B
         lambda === nothing || lambda == 0.0 ||
-            error("BuelerBenchmark(:B): variant B has lambda=0 by definition; do not pass lambda kwarg.")
+            error("HalfarDomeBenchmark(:B): variant B has lambda=0 by definition; do not pass lambda kwarg.")
         lam = 0.0
     else  # :C
         lambda === nothing &&
-            error("BuelerBenchmark(:C): variant C requires `lambda` keyword (mass-balance scale).")
+            error("HalfarDomeBenchmark(:C): variant C requires `lambda` keyword (mass-balance scale).")
         lambda > 0.0 ||
-            error("BuelerBenchmark(:C): lambda must be > 0; got $(lambda).")
+            error("HalfarDomeBenchmark(:C): lambda must be > 0; got $(lambda).")
         lam = Float64(lambda)
     end
 
-    Nx = Int(2 * R0_km / dx_km) + 1
-    isinteger(2 * R0_km / dx_km) ||
-        error("BuelerBenchmark: 2*R0_km/dx_km must be integer (got $(2*R0_km/dx_km)).")
+    ratio = 2 * R0_km / dx_km
+    isinteger(ratio) ||
+        error("HalfarDomeBenchmark: 2*R0_km/dx_km must be integer (got $ratio).")
+    Nx = Int(ratio) + 1
     half_m = R0_km * 1e3
     xc = collect(range(-half_m, half_m; length=Nx))
     yc = copy(xc)
 
-    return BuelerBenchmark(variant, xc, yc, Float64(R0_km), Float64(H0),
-                           lam, Float64(n), Float64(A),
-                           Float64(rho_ice), Float64(g))
+    return HalfarDomeBenchmark(variant, xc, yc, Float64(R0_km), Float64(H0),
+        lam, Float64(n), Float64(A),
+        Float64(rho_ice), Float64(g))
 end
 
 """
-    state(b::BuelerBenchmark, t::Real) -> NamedTuple
+$(TYPEDSIGNATURES)
 
 Analytical Halfar state at time `t`. Returns a NamedTuple with:
 
@@ -181,121 +181,62 @@ are routed into the appropriate component group by the generic
 `YelmoModel(::AbstractBenchmark, t)` constructor provided by the
 `YelmoBenchmarks` package extension.
 """
-function state(b::BuelerBenchmark, t::Real)
+function state(b::HalfarDomeBenchmark, t::Real)
     Nx = length(b.xc)
     Ny = length(b.yc)
-    H   = zeros(Nx, Ny)
+    H = zeros(Nx, Ny)
     smb = zeros(Nx, Ny)
     bueler_test_BC!(H, smb, b.xc, b.yc, Float64(t);
-                    R0      = b.R0_km,
-                    H0      = b.H0,
-                    lambda  = b.lambda,
-                    n       = b.n,
-                    A       = b.A,
-                    rho_ice = b.rho_ice,
-                    g       = b.g)
+        R0=b.R0_km,
+        H0=b.H0,
+        lambda=b.lambda,
+        n=b.n,
+        A=b.A,
+        rho_ice=b.rho_ice,
+        g=b.g)
     z_bed = zeros(Nx, Ny)
-    return (xc = b.xc, yc = b.yc,
-            H_ice = H, z_bed = z_bed, smb_ref = smb)
+    return (xc=b.xc, yc=b.yc,
+        H_ice=H, z_bed=z_bed, smb_ref=smb)
 end
 
-# Default coordinate axes and provenance attributes to embed in the
-# fixture NetCDF. Matches the schema baked into the previously-committed
-# `bueler_b_smoke__t1000.nc` so the rename is variable-equivalent.
-const _BUELER_DEFAULT_ZETA_AC      = collect(range(0.0, 1.0; length=11))
-const _BUELER_DEFAULT_ZETA_ROCK_AC = collect(range(0.0, 1.0; length=5))
-
 """
-    write_fixture!(b::BuelerBenchmark, path::AbstractString;
-                   times = [0.0]) -> Vector{String}
+$(TYPEDSIGNATURES)
 
 Serialize the analytical Halfar state at each `t` in `times` to a
-NetCDF restart at `path`. Single-time only in this PR — multi-time
+NetCDF restart at `path`. Single-time only for now — multi-time
 fixtures (a `time` dimension with multiple snapshots) are deferred to
 a future milestone.
 
-Returns a 1-element `Vector{String}` containing `path`.
+Returns a 1-element `Vector{String}` containing `path`. The restart
+schema matches the previously-committed `bueler_b_smoke__t1000.nc`
+(uniform 11-point ice / 5-point rock sigma axes).
 """
-function write_fixture!(b::BuelerBenchmark, path::AbstractString;
-                        times::AbstractVector{<:Real} = [0.0])
+function write_fixture!(b::HalfarDomeBenchmark, path::AbstractString;
+    times::AbstractVector{<:Real}=[0.0])
     length(times) == 1 ||
-        error("write_fixture!(BuelerBenchmark, …): multi-time fixtures " *
+        error("write_fixture!(HalfarDomeBenchmark, …): multi-time fixtures " *
               "deferred to a future milestone (got $(length(times)) times).")
     t = Float64(first(times))
-
     s = state(b, t)
-    mkpath(dirname(path))
-    isfile(path) && rm(path)
 
-    NCDataset(path, "c") do ds
-        Nx = length(b.xc)
-        Ny = length(b.yc)
-        zeta_ac      = _BUELER_DEFAULT_ZETA_AC
-        zeta_rock_ac = _BUELER_DEFAULT_ZETA_ROCK_AC
-        Nz_ac      = length(zeta_ac)
-        Nz_rock_ac = length(zeta_rock_ac)
-
-        # Dimensions.
-        defDim(ds, "xc",          Nx)
-        defDim(ds, "yc",          Ny)
-        defDim(ds, "zeta",        Nz_ac - 1)
-        defDim(ds, "zeta_ac",     Nz_ac)
-        defDim(ds, "zeta_rock",   Nz_rock_ac - 1)
-        defDim(ds, "zeta_rock_ac", Nz_rock_ac)
-
-        # Coordinate variables.
-        xv = defVar(ds, "xc", Float64, ("xc",))
-        xv[:] = b.xc ./ 1e3
-        xv.attrib["units"] = "km"
-
-        yv = defVar(ds, "yc", Float64, ("yc",))
-        yv[:] = b.yc ./ 1e3
-        yv.attrib["units"] = "km"
-
-        zc = defVar(ds, "zeta", Float64, ("zeta",))
-        zc[:] = 0.5 .* (zeta_ac[1:end-1] .+ zeta_ac[2:end])
-        zc.attrib["units"] = "1"
-
-        zac = defVar(ds, "zeta_ac", Float64, ("zeta_ac",))
-        zac[:] = zeta_ac
-        zac.attrib["units"] = "1"
-
-        zrc = defVar(ds, "zeta_rock", Float64, ("zeta_rock",))
-        zrc[:] = 0.5 .* (zeta_rock_ac[1:end-1] .+ zeta_rock_ac[2:end])
-        zrc.attrib["units"] = "1"
-
-        zrac = defVar(ds, "zeta_rock_ac", Float64, ("zeta_rock_ac",))
-        zrac[:] = zeta_rock_ac
-        zrac.attrib["units"] = "1"
-
-        # State variables.
-        Hv = defVar(ds, "H_ice", Float64, ("xc", "yc"))
-        Hv[:, :] = s.H_ice
-        Hv.attrib["units"]     = "m"
-        Hv.attrib["long_name"] = "Ice thickness (analytical Halfar)"
-
-        smbv = defVar(ds, "smb_ref", Float64, ("xc", "yc"))
-        smbv[:, :] = s.smb_ref
-        smbv.attrib["units"]     = "m/yr"
-        smbv.attrib["long_name"] = "Surface mass balance (analytical)"
-
-        zb = defVar(ds, "z_bed", Float64, ("xc", "yc"))
-        zb[:, :] = s.z_bed
-        zb.attrib["units"]     = "m"
-        zb.attrib["long_name"] = "Bedrock elevation (flat)"
-
-        # Provenance.
-        ds.attrib["benchmark"]     = "BUELER-$(string(b.variant))"
-        ds.attrib["solution_type"] = "analytical-halfar"
-        ds.attrib["time_yr"]       = t
-        ds.attrib["R0_km"]         = b.R0_km
-        ds.attrib["H0_m"]          = b.H0
-        ds.attrib["lambda"]        = b.lambda
-        ds.attrib["n_glen"]        = b.n
-        ds.attrib["A_Pa-3yr-1"]    = b.A
-    end
-
-    return [path]
+    vars = (
+        ("H_ice", s.H_ice, "m", "Ice thickness (analytical Halfar)"),
+        ("smb_ref", s.smb_ref, "m/yr", "Surface mass balance (analytical)"),
+        ("z_bed", s.z_bed, "m", "Bedrock elevation (flat)"),
+    )
+    attrs = (
+        "benchmark" => "BUELER-$(string(b.variant))",
+        "solution_type" => "analytical-halfar",
+        "time_yr" => t,
+        "R0_km" => b.R0_km,
+        "H0_m" => b.H0,
+        "lambda" => b.lambda,
+        "n_glen" => b.n,
+        "A_Pa-3yr-1" => b.A,
+    )
+    return _write_restart!(path, b.xc, b.yc,
+        _DEFAULT_ZETA_AC, _DEFAULT_ZETA_ROCK_AC,
+        vars, attrs)
 end
 
 # ----------------------------------------------------------------------
@@ -343,7 +284,7 @@ end
     return α, β
 end
 
-@inline function _halfar_t0(b::BuelerBenchmark)
+@inline function _halfar_t0(b::HalfarDomeBenchmark)
     R0_m = b.R0_km * 1e3
     α, β = _halfar_exponents(b.n, b.lambda)
     γ = bueler_gamma(b.A, b.n, b.rho_ice, b.g)
@@ -355,14 +296,14 @@ end
 # Closed-form (H, dH/dr) at radius `r` (m) and time `t` (yr) for the
 # Halfar dome described by `b`. Returns `(0.0, 0.0)` outside the moving
 # margin (u >= 1).
-function _halfar_HR_dHdr(b::BuelerBenchmark, r::Real, t::Real)
+function _halfar_HR_dHdr(b::HalfarDomeBenchmark, r::Real, t::Real)
     α, β, γ, t0, R0_m = _halfar_t0(b)
     t1 = Float64(t) + t0
     # Yelmo Fortran convention (matches `bueler_test_BC!` above):
     # `u = (t1/t0)^(-β) * r / R0`. As t increases, (t1/t0)^(-β)
     # decreases (β > 0), so the margin radius r_margin = R0 (t1/t0)^β
     # increases — the Halfar dome spreads with time.
-    u  = (t1 / t0)^(-β) * Float64(r) / R0_m
+    u = (t1 / t0)^(-β) * Float64(r) / R0_m
     if u >= 1.0
         return (0.0, 0.0)
     end
@@ -376,11 +317,11 @@ end
 
 # Convenience: closed-form dH/dr only (used by the unit test that
 # cross-checks against numerical centred-differences of H).
-_halfar_dHdr_closed(b::BuelerBenchmark, r::Real, t::Real) =
+_halfar_dHdr_closed(b::HalfarDomeBenchmark, r::Real, t::Real) =
     _halfar_HR_dHdr(b, r, t)[2]
 
 """
-    analytical_velocity(b::BuelerBenchmark, t::Real) -> (ux_bar, uy_bar)
+$(TYPEDSIGNATURES)
 
 Closed-form depth-averaged Halfar velocity at time `t` (years) for the
 Halfar dome described by `b`. Returns face-staggered 2D arrays:
@@ -404,7 +345,7 @@ Derivation: see the comment block above this method. References:
     numerical models for isothermal ice sheets. J. Glaciol. 51 (173),
     pp. 291-306. Eqs. 9-11 and Section 4.
 """
-function analytical_velocity(b::BuelerBenchmark, t::Real)
+function analytical_velocity(b::HalfarDomeBenchmark, t::Real)
     Nx, Ny = length(b.xc), length(b.yc)
     ux_bar = zeros(Nx + 1, Ny)
     uy_bar = zeros(Nx, Ny + 1)
@@ -412,10 +353,10 @@ function analytical_velocity(b::BuelerBenchmark, t::Real)
     α, β, γ, t0, R0_m = _halfar_t0(b)
 
     # ux_bar at face position (xc[i] + xc[i+1])/2, yc[j].
-    for j in 1:Ny, i in 1:Nx-1
+    for j in 1:Ny, i in 1:(Nx-1)
         x_f = 0.5 * (b.xc[i] + b.xc[i+1])
         y_f = b.yc[j]
-        r   = sqrt(x_f^2 + y_f^2)
+        r = sqrt(x_f^2 + y_f^2)
         H, dHdr = _halfar_HR_dHdr(b, r, t)
         if r < 1e-9 || H == 0.0
             ux_bar[i+1, j] = 0.0
@@ -427,10 +368,10 @@ function analytical_velocity(b::BuelerBenchmark, t::Real)
     end
 
     # uy_bar at face position xc[i], (yc[j] + yc[j+1])/2.
-    for j in 1:Ny-1, i in 1:Nx
+    for j in 1:(Ny-1), i in 1:Nx
         x_f = b.xc[i]
         y_f = 0.5 * (b.yc[j] + b.yc[j+1])
-        r   = sqrt(x_f^2 + y_f^2)
+        r = sqrt(x_f^2 + y_f^2)
         H, dHdr = _halfar_HR_dHdr(b, r, t)
         if r < 1e-9 || H == 0.0
             uy_bar[i, j+1] = 0.0

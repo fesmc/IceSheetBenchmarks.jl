@@ -41,7 +41,7 @@ end
 # ----------------------------------------------------------------------
 
 function fig_bueler_B()
-    b = BuelerBenchmark(:B; dx_km = 25.0)
+    b = HalfarDomeBenchmark(:B; dx_km = 25.0)
     s0   = state(b, 0.0)
     sLat = state(b, 5_000.0)
 
@@ -61,7 +61,7 @@ function fig_bueler_B()
 end
 
 function fig_bueler_C()
-    b = BuelerBenchmark(:C; dx_km = 25.0, lambda = 5.0)
+    b = HalfarDomeBenchmark(:C; dx_km = 25.0, lambda = 5.0)
     t = 1_000.0
     s = state(b, t)
 

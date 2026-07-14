@@ -1,5 +1,6 @@
 module IceSheetBenchmarks
 
+using DocStringExtensions
 using NCDatasets
 
 # ----------------------------------------------------------------------
@@ -20,18 +21,27 @@ using NCDatasets
 # ----------------------------------------------------------------------
 
 """
-    AbstractBenchmark
+$(TYPEDSIGNATURES)
 
 Supertype of every benchmark spec in this package. Concrete subtypes
 carry the parameters of a benchmark (grid axes, forcing parameters,
 Glen-flow parameters, …) and implement the small interface
 documented under [`state`](@ref), [`write_fixture!`](@ref), and
 optionally [`analytical_velocity`](@ref).
+
+# Available subtypes:
+ - [`HalfarDomeBenchmark`](@ref) — Halfar dome (Bueler et al. 2005).
+ - [`HOMCBenchmark`](@ref) — HOM-C (ISMIP-HOM, Hindmarsh et al. 2008).
+ - [`TroughBenchmark`](@ref) — Feldmann-Levermann (2017) trough.
+ - [`EISMINT1MovingBenchmark`](@ref) — EISMINT1 moving-margin (Payne et al. 2000).
+ - [`MISMIP3DBenchmark`](@ref) — MISMIP3D Stnd (Pattyn et al. 2013).
+ - [`CalvingMIPBenchmark`](@ref) — CalvingMIP (Asay-Davis et al. 2021).
+ - [`InitMIPBenchmark`](@ref) — InitMIP (Asay-Davis et al. 2021).
 """
 abstract type AbstractBenchmark end
 
 """
-    state(b::AbstractBenchmark, t::Real) -> NamedTuple
+$(TYPEDSIGNATURES)
 
 Analytical state of benchmark `b` at time `t` (years). Returns a
 `NamedTuple` keyed by ice-sheet schema names — see the
@@ -42,7 +52,7 @@ restrict to `t = 0` (initial condition) and error otherwise.
 function state end
 
 """
-    write_fixture!(b::AbstractBenchmark, path; times=[t]) -> Vector{String}
+$(TYPEDSIGNATURES)
 
 Serialise `state(b, t)` at one or more times to a NetCDF restart at
 `path`. Returns the vector of file paths written. Some benchmarks
@@ -51,12 +61,12 @@ support only a single time.
 function write_fixture! end
 
 """
-    analytical_velocity(b::AbstractBenchmark, t::Real) -> (ux_bar, uy_bar)
+$(TYPEDSIGNATURES)
 
 Closed-form depth-averaged ice-velocity field. `ux_bar` is shape
 `(Nx+1, Ny)` and `uy_bar` is `(Nx, Ny+1)` (face-staggered). Only
 implemented for benchmarks with a known analytical solution
-(currently [`BuelerBenchmark`](@ref)). The fallback throws an
+(currently [`HalfarDomeBenchmark`](@ref)). The fallback throws an
 informative error.
 """
 function analytical_velocity end
@@ -66,8 +76,7 @@ analytical_velocity(b::AbstractBenchmark, t::Real) = error(
     "Use a concrete benchmark subtype with a closed-form velocity solution.")
 
 """
-    calvmip_exp1!(cr_x, cr_y, u_bar, v_bar, H_ice, f_ice, lsf, time;
-                  xc, yc, r_lim = 750e3)
+$(TYPEDSIGNATURES)
 
 In-place velocity-equilibrium calving-rate law for CalvingMIP Exp1/Exp3.
 Skeleton declared here so hosts (or the `YelmoBenchmarks` extension)
@@ -77,8 +86,7 @@ arguments and staggered shapes.
 function calvmip_exp1! end
 
 """
-    calvmip_exp2!(cr_x, cr_y, u_bar, v_bar, H_ice, f_ice, lsf, time;
-                  xc, yc)
+$(TYPEDSIGNATURES)
 
 In-place oscillating-front calving-rate law for CalvingMIP Exp2/Exp4.
 Skeleton declared here so hosts can extend it.
@@ -89,6 +97,7 @@ export AbstractBenchmark
 export state, write_fixture!, analytical_velocity
 export calvmip_exp1!, calvmip_exp2!
 
+include("fixture_io.jl")
 include("bueler.jl")
 include("hom_c.jl")
 include("trough.jl")
@@ -97,7 +106,7 @@ include("mismip3d.jl")
 include("calvingmip.jl")
 include("initmip.jl")
 
-export BuelerBenchmark, bueler_gamma, bueler_test_BC!
+export HalfarDomeBenchmark, bueler_gamma, bueler_test_BC!
 export HOMCBenchmark
 export TroughBenchmark
 export EISMINT1MovingBenchmark, eismint_moving_smb

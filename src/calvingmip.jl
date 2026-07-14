@@ -36,7 +36,7 @@ export calvmip_bed_circular, calvmip_bed_thule
 # -----------------------------------------------------------------------
 
 """
-    calvmip_bed_circular(x, y) -> Float64
+$(TYPEDSIGNATURES)
 
 CalvingMIP circular-domain bed elevation (m) at point (x, y) in metres.
 Parabolic bowl: z_bed = Bc − (Bc − Bl) · r² / R0².
@@ -53,7 +53,7 @@ function calvmip_bed_circular(x::Real, y::Real)
 end
 
 """
-    calvmip_bed_thule(x, y) -> Float64
+$(TYPEDSIGNATURES)
 
 CalvingMIP Thule-domain bed elevation (m) at point (x, y) in metres.
 Parabolic bowl with cosine undulations:
@@ -80,7 +80,7 @@ end
 # -----------------------------------------------------------------------
 
 """
-    CalvingMIPBenchmark(exp::Symbol = :exp1; dx_km=25.0, ...)
+$(TYPEDSIGNATURES)
 
 CalvingMIP benchmark on the circular (exp1/2) or Thule (exp3/4/5) domain.
 
@@ -94,39 +94,36 @@ The calving law itself is supplied by the host model via a hook (e.g.
 `YelmoHooks.calv_flt`); this struct only carries the model-agnostic
 geometry and forcing.
 """
-struct CalvingMIPBenchmark <: AbstractBenchmark
-    exp           ::Symbol
-    domain        ::Symbol
-    xc            ::Vector{Float64}
-    yc            ::Vector{Float64}
-    dx_km         ::Float64
-    smb_const     ::Float64
-    T_srf_const   ::Float64
-    Q_geo_const   ::Float64
+Base.@kwdef struct CalvingMIPBenchmark{T<:AbstractFloat} <: AbstractBenchmark
+    exp::Symbol
+    domain::Symbol
+    xc::Vector{T}
+    yc::Vector{T}
+    dx_km::T
+    smb_const::T = 0.3
+    T_srf_const::T = 223.15
+    Q_geo_const::T = 42.0
 end
 
-function CalvingMIPBenchmark(exp::Symbol = :exp1;
-                              dx_km::Real        = 25.0,
-                              smb_const::Real    = 0.3,
-                              T_srf_const::Real  = 223.15,
-                              Q_geo_const::Real  = 42.0)
+function CalvingMIPBenchmark(exp::Symbol;
+    dx_km::Real=25.0,
+    smb_const::Real=0.3,
+    T_srf_const::Real=223.15,
+    Q_geo_const::Real=42.0)
     exp in (:exp1, :exp2, :exp3, :exp4) || error(
         "CalvingMIPBenchmark: unsupported exp = $exp. Supported: :exp1, :exp2, :exp3, :exp4.")
 
     domain = exp in (:exp1, :exp2) ? :circular : :thule
 
-    dx_m  = Float64(dx_km) * 1e3
+    T = _bench_eltype(dx_km, smb_const, T_srf_const, Q_geo_const)
+    dx_m = T(dx_km) * 1000
     # Domain: x, y ∈ [−800, 800] km  → 1600 km extent → 64 cells at 25 km.
-    extent_m = 1600e3
+    extent_m = T(1_600_000)
     N = Int(round(extent_m / dx_m))
-    xc = collect(range(-extent_m/2 + dx_m/2,  extent_m/2 - dx_m/2; length=N))
-    yc = collect(range(-extent_m/2 + dx_m/2,  extent_m/2 - dx_m/2; length=N))
+    axis = collect(range(-extent_m/2 + dx_m/2, extent_m/2 - dx_m/2; length=N))
 
-    return CalvingMIPBenchmark(exp, domain,
-                                xc, yc, Float64(dx_km),
-                                Float64(smb_const),
-                                Float64(T_srf_const),
-                                Float64(Q_geo_const))
+    return CalvingMIPBenchmark{T}(exp, domain, axis, copy(axis), T(dx_km),
+        T(smb_const), T(T_srf_const), T(Q_geo_const))
 end
 
 # -----------------------------------------------------------------------
@@ -134,7 +131,7 @@ end
 # -----------------------------------------------------------------------
 
 """
-    state(b::CalvingMIPBenchmark, t) -> NamedTuple
+$(TYPEDSIGNATURES)
 
 Analytical CalvingMIP IC at `t = 0`: H_ice = 0 everywhere, z_bed from
 the circular bowl formula, lsf = +1 everywhere.
@@ -150,31 +147,32 @@ function state(b::CalvingMIPBenchmark, t::Real)
 end
 
 function _calvingmip_analytical_state(b::CalvingMIPBenchmark)
-    Nx = length(b.xc); Ny = length(b.yc)
+    Nx = length(b.xc);
+    Ny = length(b.yc)
 
     bed_fn = b.domain == :thule ? calvmip_bed_thule : calvmip_bed_circular
-    z_bed  = [bed_fn(b.xc[i], b.yc[j]) for i in 1:Nx, j in 1:Ny]
+    z_bed = [bed_fn(b.xc[i], b.yc[j]) for i in 1:Nx, j in 1:Ny]
     H_ice = zeros(Nx, Ny)
     # lsf = +1 (all ocean) — ice will grow from SMB; the calving step's
     # above-SL pin will force lsf = −1 over land each step.
-    lsf   = ones(Nx, Ny)
+    lsf = ones(Nx, Ny)
 
-    smb_ref     = fill(b.smb_const,   Nx, Ny)
-    T_srf       = fill(b.T_srf_const, Nx, Ny)
-    Q_geo       = fill(b.Q_geo_const, Nx, Ny)
-    z_sl        = zeros(Nx, Ny)
-    bmb_shlf    = zeros(Nx, Ny)
-    T_shlf      = fill(b.T_srf_const, Nx, Ny)
-    H_sed       = zeros(Nx, Ny)
+    smb_ref = fill(b.smb_const, Nx, Ny)
+    T_srf = fill(b.T_srf_const, Nx, Ny)
+    Q_geo = fill(b.Q_geo_const, Nx, Ny)
+    z_sl = zeros(Nx, Ny)
+    bmb_shlf = zeros(Nx, Ny)
+    T_shlf = fill(b.T_srf_const, Nx, Ny)
+    H_sed = zeros(Nx, Ny)
     ice_allowed = ones(Nx, Ny)
-    calv_mask   = zeros(Nx, Ny)
+    calv_mask = zeros(Nx, Ny)
 
-    return (xc = b.xc, yc = b.yc,
-            H_ice = H_ice, z_bed = z_bed, z_sl = z_sl,
-            smb_ref = smb_ref, T_srf = T_srf, Q_geo = Q_geo,
-            bmb_shlf = bmb_shlf, T_shlf = T_shlf, H_sed = H_sed,
-            ice_allowed = ice_allowed, calv_mask = calv_mask,
-            lsf = lsf)
+    return (xc=b.xc, yc=b.yc,
+        H_ice=H_ice, z_bed=z_bed, z_sl=z_sl,
+        smb_ref=smb_ref, T_srf=T_srf, Q_geo=Q_geo,
+        bmb_shlf=bmb_shlf, T_shlf=T_shlf, H_sed=H_sed,
+        ice_allowed=ice_allowed, calv_mask=calv_mask,
+        lsf=lsf)
 end
 
 # Default zeta axes for the analytical fixture writer.
@@ -182,13 +180,12 @@ const _CALVINGMIP_NZ_AA = 11
 function _calvingmip_zeta_ac()
     nz_aa = _CALVINGMIP_NZ_AA
     zeta_aa = collect(range(0.5/nz_aa, 1.0 - 0.5/nz_aa; length=nz_aa))
-    zeta_ac = vcat(0.0, 0.5*(zeta_aa[1:end-1].+zeta_aa[2:end]), 1.0)
+    zeta_ac = vcat(0.0, 0.5*(zeta_aa[1:(end-1)] .+ zeta_aa[2:end]), 1.0)
     return zeta_aa, zeta_ac
 end
-const _CALVINGMIP_DEFAULT_ZETA_ROCK_AC = collect(range(0.0, 1.0; length=5))
 
 """
-    write_fixture!(b::CalvingMIPBenchmark, path; times=[0.0]) -> Vector{String}
+$(TYPEDSIGNATURES)
 
 Write the analytical zero-ice IC at `t = 0` to `path` as a NetCDF
 restart. Multi-time fixtures (`t > 0`) require a forward simulation;
@@ -196,7 +193,7 @@ those live next to the host-model integration (e.g. the YelmoMirror
 fixture writer in `test/benchmarks/calvingmip.jl`).
 """
 function write_fixture!(b::CalvingMIPBenchmark, path::AbstractString;
-                        times::AbstractVector{<:Real} = [0.0])
+    times::AbstractVector{<:Real}=[0.0])
     length(times) == 1 ||
         error("write_fixture!(CalvingMIPBenchmark, …): pass `times` " *
               "with exactly one entry per call (got $(length(times))).")
@@ -207,66 +204,35 @@ function write_fixture!(b::CalvingMIPBenchmark, path::AbstractString;
 
     s = _calvingmip_analytical_state(b)
     bed_longname = b.domain == :thule ? "Bedrock elevation (Thule bowl + undulations)" :
-                                        "Bedrock elevation (parabolic bowl)"
-    mkpath(dirname(path))
-    isfile(path) && rm(path)
-
+                   "Bedrock elevation (parabolic bowl)"
     _, zeta_ac = _calvingmip_zeta_ac()
-    zeta_rock_ac = _CALVINGMIP_DEFAULT_ZETA_ROCK_AC
-    Nz_ac      = length(zeta_ac)
-    Nz_rock_ac = length(zeta_rock_ac)
-    Nx, Ny = length(b.xc), length(b.yc)
 
-    NCDataset(path, "c") do ds
-        defDim(ds, "xc", Nx); defDim(ds, "yc", Ny)
-        defDim(ds, "zeta", Nz_ac - 1); defDim(ds, "zeta_ac", Nz_ac)
-        defDim(ds, "zeta_rock", Nz_rock_ac - 1)
-        defDim(ds, "zeta_rock_ac", Nz_rock_ac)
-
-        xv = defVar(ds, "xc", Float64, ("xc",))
-        xv[:] = b.xc ./ 1e3; xv.attrib["units"] = "km"
-        yv = defVar(ds, "yc", Float64, ("yc",))
-        yv[:] = b.yc ./ 1e3; yv.attrib["units"] = "km"
-        zc = defVar(ds, "zeta", Float64, ("zeta",))
-        zc[:] = 0.5 .* (zeta_ac[1:end-1] .+ zeta_ac[2:end])
-        zc.attrib["units"] = "1"
-        zac = defVar(ds, "zeta_ac", Float64, ("zeta_ac",))
-        zac[:] = zeta_ac; zac.attrib["units"] = "1"
-        zrc = defVar(ds, "zeta_rock", Float64, ("zeta_rock",))
-        zrc[:] = 0.5 .* (zeta_rock_ac[1:end-1] .+ zeta_rock_ac[2:end])
-        zrc.attrib["units"] = "1"
-        zrac = defVar(ds, "zeta_rock_ac", Float64, ("zeta_rock_ac",))
-        zrac[:] = zeta_rock_ac; zrac.attrib["units"] = "1"
-
-        for (name, data, units, longname) in (
-            ("H_ice",       s.H_ice,       "m",       "Ice thickness (zero IC)"),
-            ("z_bed",       s.z_bed,       "m",       bed_longname),
-            ("z_sl",        s.z_sl,        "m",       "Sea level"),
-            ("smb_ref",     s.smb_ref,     "m/yr",    "Surface mass balance (constant)"),
-            ("T_srf",       s.T_srf,       "K",       "Surface temperature"),
-            ("Q_geo",       s.Q_geo,       "mW m^-2", "Geothermal flux"),
-            ("bmb_shlf",    s.bmb_shlf,    "m/yr",    "Shelf bmb (zero)"),
-            ("T_shlf",      s.T_shlf,      "K",       "Shelf base temperature"),
-            ("H_sed",       s.H_sed,       "m",       "Sediment thickness (zero)"),
-            ("ice_allowed", s.ice_allowed, "1",       "Ice-allowed mask"),
-            ("calv_mask",   s.calv_mask,   "1",       "Calving mask (zero)"),
-            ("lsf",         s.lsf,         "1",       "Level-set function (+1 ocean, −1 ice)"),
-        )
-            v = defVar(ds, name, Float64, ("xc", "yc"))
-            v[:, :] = data
-            v.attrib["units"]     = units
-            v.attrib["long_name"] = longname
-        end
-
-        ds.attrib["benchmark"]      = "CalvingMIP-$(b.exp)"
-        ds.attrib["solution_type"]  = "analytical-IC"
-        ds.attrib["time_yr"]        = t
-        ds.attrib["dx_km"]          = b.dx_km
-        ds.attrib["smb_const"]      = b.smb_const
-        ds.attrib["T_srf_K"]        = b.T_srf_const
-        ds.attrib["Q_geo_mWm2"]     = b.Q_geo_const
-    end
-    return [path]
+    vars = (
+        ("H_ice", s.H_ice, "m", "Ice thickness (zero IC)"),
+        ("z_bed", s.z_bed, "m", bed_longname),
+        ("z_sl", s.z_sl, "m", "Sea level"),
+        ("smb_ref", s.smb_ref, "m/yr", "Surface mass balance (constant)"),
+        ("T_srf", s.T_srf, "K", "Surface temperature"),
+        ("Q_geo", s.Q_geo, "mW m^-2", "Geothermal flux"),
+        ("bmb_shlf", s.bmb_shlf, "m/yr", "Shelf bmb (zero)"),
+        ("T_shlf", s.T_shlf, "K", "Shelf base temperature"),
+        ("H_sed", s.H_sed, "m", "Sediment thickness (zero)"),
+        ("ice_allowed", s.ice_allowed, "1", "Ice-allowed mask"),
+        ("calv_mask", s.calv_mask, "1", "Calving mask (zero)"),
+        ("lsf", s.lsf, "1", "Level-set function (+1 ocean, −1 ice)"),
+    )
+    attrs = (
+        "benchmark" => "CalvingMIP-$(b.exp)",
+        "solution_type" => "analytical-IC",
+        "time_yr" => t,
+        "dx_km" => b.dx_km,
+        "smb_const" => b.smb_const,
+        "T_srf_K" => b.T_srf_const,
+        "Q_geo_mWm2" => b.Q_geo_const,
+    )
+    return _write_restart!(path, b.xc, b.yc,
+        zeta_ac, _DEFAULT_ZETA_ROCK_AC,
+        vars, attrs)
 end
 
 # ----------------------------------------------------------------------
@@ -291,8 +257,7 @@ end
 # ----------------------------------------------------------------------
 
 """
-    calvmip_exp1!(cr_x, cr_y, u_bar, v_bar, H_ice, f_ice, lsf, time;
-                  xc, yc, r_lim=750e3) -> (cr_x, cr_y)
+$(TYPEDSIGNATURES)
 
 CalvingMIP Exp1/3 velocity-equilibrium calving with the front pinned
 at radius `r_lim` (default 750 km). Port of `calvmip_exp1` in
@@ -306,12 +271,13 @@ Algorithm:
      `r_lim` circle.
 """
 function calvmip_exp1!(cr_x::AbstractMatrix, cr_y::AbstractMatrix,
-                        u_bar::AbstractMatrix, v_bar::AbstractMatrix,
-                        H_ice, f_ice, lsf, time::Real;
-                        xc::AbstractVector{<:Real},
-                        yc::AbstractVector{<:Real},
-                        r_lim::Real = 750e3)
-    Nx = length(xc); Ny = length(yc)
+    u_bar::AbstractMatrix, v_bar::AbstractMatrix,
+    H_ice, f_ice, lsf, time::Real;
+    xc::AbstractVector{<:Real},
+    yc::AbstractVector{<:Real},
+    r_lim::Real=750e3)
+    Nx = length(xc);
+    Ny = length(yc)
 
     # Step 1: cr = −u (velocity equilibrium).
     @inbounds for j in axes(cr_x, 2), i in axes(cr_x, 1)
@@ -357,8 +323,7 @@ function calvmip_exp1!(cr_x::AbstractMatrix, cr_y::AbstractMatrix,
 end
 
 """
-    calvmip_exp2!(cr_x, cr_y, u_bar, v_bar, H_ice, f_ice, lsf, time;
-                  xc, yc) -> (cr_x, cr_y)
+$(TYPEDSIGNATURES)
 
 CalvingMIP Exp2 oscillating-front calving rate. Port of
 `calvmip_exp2` in `yelmo/src/physics/calving/calving_ac.f90:484-533`.
@@ -375,10 +340,10 @@ a √2 speed bias at 45° and is unstable when the normal velocity is
 near zero.
 """
 function calvmip_exp2!(cr_x::AbstractMatrix, cr_y::AbstractMatrix,
-                        u_bar::AbstractMatrix, v_bar::AbstractMatrix,
-                        H_ice, f_ice, lsf, time::Real;
-                        xc::AbstractVector{<:Real},
-                        yc::AbstractVector{<:Real})
+    u_bar::AbstractMatrix, v_bar::AbstractMatrix,
+    H_ice, f_ice, lsf, time::Real;
+    xc::AbstractVector{<:Real},
+    yc::AbstractVector{<:Real})
     wv = -300.0 * sinpi(2.0 * Float64(time) / 1000.0)
 
     Nxu, Nyu = size(u_bar, 1), size(u_bar, 2)   # x-faces: Nx+1, Ny
@@ -386,23 +351,25 @@ function calvmip_exp2!(cr_x::AbstractMatrix, cr_y::AbstractMatrix,
 
     # x-faces: cross-stagger v from the 4 surrounding y-faces.
     @inbounds for j in 1:Nyu, i in 1:Nxu
-        u    = u_bar[i, j]
-        i1   = max(1, i - 1);  i2 = min(Nxv, i)
-        jp1  = min(Nyv, j + 1)
+        u = u_bar[i, j]
+        i1 = max(1, i - 1);
+        i2 = min(Nxv, i)
+        jp1 = min(Nyv, j + 1)
         vcrs = 0.25 * (v_bar[i1, j] + v_bar[i1, jp1] +
                        v_bar[i2, j] + v_bar[i2, jp1])
-        uxy  = max(1e-8, sqrt(u*u + vcrs*vcrs))
+        uxy = max(1e-8, sqrt(u*u + vcrs*vcrs))
         cr_x[i, j] = -u + (u / uxy) * wv
     end
 
     # y-faces: cross-stagger u from the 4 surrounding x-faces.
     @inbounds for j in 1:Nyv, i in 1:Nxv
-        v    = v_bar[i, j]
-        ip1  = min(Nxu, i + 1)
-        jm1  = max(1, j - 1);  jj = min(Nyu, j)
-        ucrs = 0.25 * (u_bar[i,   jm1] + u_bar[ip1, jm1] +
-                       u_bar[i,   jj ] + u_bar[ip1, jj ])
-        uxy  = max(1e-8, sqrt(v*v + ucrs*ucrs))
+        v = v_bar[i, j]
+        ip1 = min(Nxu, i + 1)
+        jm1 = max(1, j - 1);
+        jj = min(Nyu, j)
+        ucrs = 0.25 * (u_bar[i, jm1] + u_bar[ip1, jm1] +
+                       u_bar[i, jj] + u_bar[ip1, jj])
+        uxy = max(1e-8, sqrt(v*v + ucrs*ucrs))
         cr_y[i, j] = -v + (v / uxy) * wv
     end
     return cr_x, cr_y

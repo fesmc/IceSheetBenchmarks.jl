@@ -27,14 +27,7 @@
 # ----------------------------------------------------------------------
 
 """
-    MISMIP3DBenchmark(variant::Symbol = :Stnd;
-                       dx_km=16.0, xmax_km=800.0, Ly_km=100.0,
-                       H0=10.0, z_bed_floor=-500.0,
-                       bed_intercept=-100.0, bed_slope=1.0,
-                       smb_const=0.5, T_srf_const=273.15,
-                       Q_geo_const=42.0,
-                       n_glen=3.0, A_glen=3.1536e-18,
-                       cf_ref=3.165176e4, N_eff_const=1.0)
+$(TYPEDSIGNATURES)
 
 MISMIP3D Stnd benchmark spec. Carries domain axes, bed geometry, IC
 slab thickness, surface forcing, and Glen-flow / friction parameters.
@@ -113,7 +106,7 @@ function MISMIP3DBenchmark(variant::Symbol = :Stnd;
 end
 
 """
-    state(b::MISMIP3DBenchmark, t) -> NamedTuple
+$(TYPEDSIGNATURES)
 
 Analytical Stnd IC at `t = 0`. Returns a NamedTuple keyed by
 `:xc, :yc, :H_ice, :z_bed, :z_sl, :smb_ref, :T_srf, :Q_geo,
@@ -159,11 +152,8 @@ function _mismip3d_analytical_state(b::MISMIP3DBenchmark)
             mask_ice = mask_ice)
 end
 
-const _MISMIP3D_DEFAULT_ZETA_AC      = collect(range(0.0, 1.0; length=11))
-const _MISMIP3D_DEFAULT_ZETA_ROCK_AC = collect(range(0.0, 1.0; length=5))
-
 """
-    write_fixture!(b::MISMIP3DBenchmark, path; times=[0.0]) -> Vector{String}
+$(TYPEDSIGNATURES)
 
 Write the analytical Stnd IC at `t = 0` to `path` as a NetCDF restart.
 Only `t = 0` is supported.
@@ -187,72 +177,39 @@ function _write_mismip3d_analytical_fixture!(b::MISMIP3DBenchmark,
                                               path::AbstractString,
                                               t::Float64)
     s = _mismip3d_analytical_state(b)
-    mkpath(dirname(path))
-    isfile(path) && rm(path)
 
-    Nx = length(b.xc); Ny = length(b.yc)
-    zeta_ac      = _MISMIP3D_DEFAULT_ZETA_AC
-    zeta_rock_ac = _MISMIP3D_DEFAULT_ZETA_ROCK_AC
-    Nz_ac        = length(zeta_ac)
-    Nz_rock_ac   = length(zeta_rock_ac)
-
-    NCDataset(path, "c") do ds
-        defDim(ds, "xc",          Nx)
-        defDim(ds, "yc",          Ny)
-        defDim(ds, "zeta",        Nz_ac - 1)
-        defDim(ds, "zeta_ac",     Nz_ac)
-        defDim(ds, "zeta_rock",   Nz_rock_ac - 1)
-        defDim(ds, "zeta_rock_ac", Nz_rock_ac)
-
-        xv = defVar(ds, "xc", Float64, ("xc",))
-        xv[:] = b.xc ./ 1e3; xv.attrib["units"] = "km"
-        yv = defVar(ds, "yc", Float64, ("yc",))
-        yv[:] = b.yc ./ 1e3; yv.attrib["units"] = "km"
-        zc = defVar(ds, "zeta", Float64, ("zeta",))
-        zc[:] = 0.5 .* (zeta_ac[1:end-1] .+ zeta_ac[2:end]); zc.attrib["units"] = "1"
-        zac = defVar(ds, "zeta_ac", Float64, ("zeta_ac",))
-        zac[:] = zeta_ac; zac.attrib["units"] = "1"
-        zrc = defVar(ds, "zeta_rock", Float64, ("zeta_rock",))
-        zrc[:] = 0.5 .* (zeta_rock_ac[1:end-1] .+ zeta_rock_ac[2:end])
-        zrc.attrib["units"] = "1"
-        zrac = defVar(ds, "zeta_rock_ac", Float64, ("zeta_rock_ac",))
-        zrac[:] = zeta_rock_ac; zrac.attrib["units"] = "1"
-
-        for (name, data, units, longname) in (
-            ("H_ice",       s.H_ice,       "m",        "Ice thickness (Stnd 10 m slab)"),
-            ("z_bed",       s.z_bed,       "m",        "Bedrock elevation (-100 - x_km)"),
-            ("z_sl",        s.z_sl,        "m",        "Sea level"),
-            ("smb_ref",     s.smb_ref,     "m/yr",     "Surface mass balance (Stnd: 0.5 m/yr)"),
-            ("T_srf",       s.T_srf,       "K",        "Surface temperature"),
-            ("Q_geo",       s.Q_geo,       "mW m^-2",  "Geothermal flux"),
-            ("bmb_shlf",    s.bmb_shlf,    "m/yr",     "Shelf bmb (zero)"),
-            ("T_shlf",      s.T_shlf,      "K",        "Shelf base temperature"),
-            ("H_sed",       s.H_sed,       "m",        "Sediment thickness (zero)"),
-            ("mask_ice",    s.mask_ice,    "1",        "Ice mask (0=none, 1=fixed, 2=dynamic; eastern column = 0)"),
-        )
-            v = defVar(ds, name, Float64, ("xc", "yc"))
-            v[:, :] = data
-            v.attrib["units"]     = units
-            v.attrib["long_name"] = longname
-        end
-
-        ds.attrib["benchmark"]      = "MISMIP3D-$(string(b.variant))"
-        ds.attrib["solution_type"]  = "analytical-IC"
-        ds.attrib["time_yr"]        = t
-        ds.attrib["xmax_km"]        = b.xmax_km
-        ds.attrib["Ly_km"]          = b.Ly_km
-        ds.attrib["dx_km"]          = b.dx_km
-        ds.attrib["H0_m"]           = b.H0
-        ds.attrib["bed_intercept"]  = b.bed_intercept
-        ds.attrib["bed_slope"]      = b.bed_slope
-        ds.attrib["z_bed_floor_m"]  = b.z_bed_floor
-        ds.attrib["smb_const_m_yr"] = b.smb_const
-        ds.attrib["T_srf_K"]        = b.T_srf_const
-        ds.attrib["Q_geo_mWm2"]     = b.Q_geo_const
-        ds.attrib["n_glen"]         = b.n_glen
-        ds.attrib["A_glen_Pa-3yr-1"] = b.A_glen
-        ds.attrib["cf_ref"]         = b.cf_ref
-        ds.attrib["N_eff_Pa"]       = b.N_eff_const
-    end
-    return [path]
+    vars = (
+        ("H_ice",    s.H_ice,    "m",       "Ice thickness (Stnd 10 m slab)"),
+        ("z_bed",    s.z_bed,    "m",       "Bedrock elevation (-100 - x_km)"),
+        ("z_sl",     s.z_sl,     "m",       "Sea level"),
+        ("smb_ref",  s.smb_ref,  "m/yr",    "Surface mass balance (Stnd: 0.5 m/yr)"),
+        ("T_srf",    s.T_srf,    "K",       "Surface temperature"),
+        ("Q_geo",    s.Q_geo,    "mW m^-2", "Geothermal flux"),
+        ("bmb_shlf", s.bmb_shlf, "m/yr",    "Shelf bmb (zero)"),
+        ("T_shlf",   s.T_shlf,   "K",       "Shelf base temperature"),
+        ("H_sed",    s.H_sed,    "m",       "Sediment thickness (zero)"),
+        ("mask_ice", s.mask_ice, "1",       "Ice mask (0=none, 1=fixed, 2=dynamic; eastern column = 0)"),
+    )
+    attrs = (
+        "benchmark"       => "MISMIP3D-$(string(b.variant))",
+        "solution_type"   => "analytical-IC",
+        "time_yr"         => t,
+        "xmax_km"         => b.xmax_km,
+        "Ly_km"           => b.Ly_km,
+        "dx_km"           => b.dx_km,
+        "H0_m"            => b.H0,
+        "bed_intercept"   => b.bed_intercept,
+        "bed_slope"       => b.bed_slope,
+        "z_bed_floor_m"   => b.z_bed_floor,
+        "smb_const_m_yr"  => b.smb_const,
+        "T_srf_K"         => b.T_srf_const,
+        "Q_geo_mWm2"      => b.Q_geo_const,
+        "n_glen"          => b.n_glen,
+        "A_glen_Pa-3yr-1" => b.A_glen,
+        "cf_ref"          => b.cf_ref,
+        "N_eff_Pa"        => b.N_eff_const,
+    )
+    return _write_restart!(path, b.xc, b.yc,
+                           _DEFAULT_ZETA_AC, _DEFAULT_ZETA_ROCK_AC,
+                           vars, attrs)
 end

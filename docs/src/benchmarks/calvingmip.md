@@ -18,7 +18,7 @@ The package provides:
 ## Constructor
 
 ```julia
-CalvingMIPBenchmark(exp::Symbol = :exp1;
+CalvingMIPBenchmark(exp::Symbol;
                     dx_km::Real        = 25.0,
                     smb_const::Real    = 0.3,
                     T_srf_const::Real  = 223.15,

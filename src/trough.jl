@@ -18,11 +18,7 @@
 # ----------------------------------------------------------------------
 
 """
-    TroughBenchmark(variant::Symbol; dx_km=4.0,
-                    lx_km=700.0, ly_km=160.0, fc_km=16.0,
-                    dc_m=500.0, wc_km=24.0, x_cf_km=640.0,
-                    Tsrf_const=-20.0, smb_const=0.3, Qgeo_const=70.0,
-                    rho_ice=910.0, g=9.81)
+$(TYPEDSIGNATURES)
 
 Feldmann-Levermann (2017) "TROUGH-F17" trough benchmark spec.
 
@@ -122,4 +118,88 @@ end
     zb_y = (Float64(dc_m) / (1.0 + exp(e1))) +
            (Float64(dc_m) / (1.0 + exp(e2)))                    # [m]
     return max(zb_x + zb_y, Float64(zb_deep))
+end
+
+function _trough_analytical_state(b::TroughBenchmark)
+    Nx, Ny = length(b.xc), length(b.yc)
+    z_bed = [_trough_f17_zbed(b.xc[i] / 1e3, b.yc[j] / 1e3,
+                              b.fc_km, b.dc_m, b.wc_km)
+             for i in 1:Nx, j in 1:Ny]
+    H_ice   = zeros(Nx, Ny)                          # grows from smb
+    z_sl    = zeros(Nx, Ny)
+    smb_ref = fill(b.smb_const, Nx, Ny)
+    T_srf   = fill(b.Tsrf_const + 273.15, Nx, Ny)    # struct field is °C
+    Q_geo   = fill(b.Qgeo_const, Nx, Ny)
+    return (xc = b.xc, yc = b.yc,
+            H_ice = H_ice, z_bed = z_bed, z_sl = z_sl,
+            smb_ref = smb_ref, T_srf = T_srf, Q_geo = Q_geo)
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Analytical F17 IC at `t = 0`: the closed-form trough bed
+([`_trough_f17_zbed`](@ref)), zero ice, sea level at 0, and the
+uniform forcing carried by the struct (`smb_const`, `Tsrf_const`
+converted to K, `Qgeo_const`).
+
+The benchmark has no closed-form transient solution, so only `t = 0`
+is supported; non-zero times require a forward simulation and should
+be provided by the host (e.g. by reading a host-produced reference
+fixture).
+"""
+function state(b::TroughBenchmark, t::Real)
+    Float64(t) == 0.0 || error(
+        "TroughBenchmark.state: only t = 0 is supported (got t = $t). " *
+        "Run a forward simulation for non-zero times.")
+    return _trough_analytical_state(b)
+end
+
+const _TROUGH_DEFAULT_ZETA_AC      = _DEFAULT_ZETA_AC
+const _TROUGH_DEFAULT_ZETA_ROCK_AC = _DEFAULT_ZETA_ROCK_AC
+
+"""
+$(TYPEDSIGNATURES)
+
+Write the analytical F17 IC at `t = 0` to `path` as a NetCDF restart.
+Only `t = 0` is supported; host-driven trajectories (`t > 0`) require a
+forward simulation.
+"""
+function write_fixture!(b::TroughBenchmark, path::AbstractString;
+                        times::AbstractVector{<:Real} = [0.0])
+    length(times) == 1 ||
+        error("write_fixture!(TroughBenchmark, …): pass `times` with " *
+              "exactly one entry per call (got $(length(times))).")
+    t = Float64(first(times))
+    t == 0.0 ||
+        error("TroughBenchmark.write_fixture!: only t = 0 is supported " *
+              "(got t = $t).")
+
+    s = _trough_analytical_state(b)
+    vars = (
+        ("H_ice",   s.H_ice,   "m",       "Ice thickness (zero IC)"),
+        ("z_bed",   s.z_bed,   "m",       "Bedrock elevation (F17 trough)"),
+        ("z_sl",    s.z_sl,    "m",       "Sea level"),
+        ("smb_ref", s.smb_ref, "m/yr",    "Surface mass balance (constant)"),
+        ("T_srf",   s.T_srf,   "K",       "Surface temperature (constant)"),
+        ("Q_geo",   s.Q_geo,   "mW m^-2", "Geothermal flux (constant)"),
+    )
+    attrs = (
+        "benchmark"     => "TROUGH-$(string(b.variant))",
+        "solution_type" => "analytical-IC",
+        "time_yr"       => t,
+        "dx_km"         => b.dx_km,
+        "lx_km"         => b.lx_km,
+        "ly_km"         => b.ly_km,
+        "fc_km"         => b.fc_km,
+        "dc_m"          => b.dc_m,
+        "wc_km"         => b.wc_km,
+        "x_cf_km"       => b.x_cf_km,
+        "smb_const"     => b.smb_const,
+        "Tsrf_degC"     => b.Tsrf_const,
+        "Qgeo_mWm2"     => b.Qgeo_const,
+    )
+    return _write_restart!(path, b.xc, b.yc,
+                           _TROUGH_DEFAULT_ZETA_AC, _TROUGH_DEFAULT_ZETA_ROCK_AC,
+                           vars, attrs)
 end
