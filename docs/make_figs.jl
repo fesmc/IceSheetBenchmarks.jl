@@ -91,11 +91,15 @@ function fig_hom_c()
     yc_km = b.yc ./ 1e3
     beta  = [IceSheetBenchmarks._hom_c_beta(b, b.xc[i], b.yc[j])
              for i in eachindex(b.xc), j in eachindex(b.yc)]
+    # Full bed: the periodic part from `state` plus the background slope.
+    sx, sy = background_slope(b)
+    z_bed = [s.z_bed[i, j] + sx * b.xc[i] + sy * b.yc[j]
+             for i in eachindex(b.xc), j in eachindex(b.yc)]
 
     fig = Figure(size = (1100, 460))
-    ax1 = Axis(fig[1, 1]; title = "ISMIP-HOM C  z_bed  (sloping)")
+    ax1 = Axis(fig[1, 1]; title = "ISMIP-HOM C  z_bed + background slope")
     ax2 = Axis(fig[1, 2]; title = "ISMIP-HOM C  β (basal friction)")
-    hm1 = heatmap_panel!(ax1, xc_km, yc_km, s.z_bed; colormap = :terrain)
+    hm1 = heatmap_panel!(ax1, xc_km, yc_km, z_bed; colormap = :terrain)
     Colorbar(fig[1, 1, Right()], hm1; label = "z_bed (m)")
     hm2 = heatmap_panel!(ax2, xc_km, yc_km, beta;
                         colormap = :viridis, hide_y = true)

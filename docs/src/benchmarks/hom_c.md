@@ -34,15 +34,19 @@ to be an integer.
 
 ### `:C` — sloping bed, sinusoidal basal friction
 
-The only variant currently supported. The bed is `z_bed(x) = −x · tan α − H`
-and the basal friction coefficient is
+The only variant currently supported. The inclined plane `z = −x · tan α` is
+not periodic, so, as in the Fortran reference, it is carried as a uniform
+background slope, [`background_slope`](@ref)`(b) = (−tan α, 0)`, which the
+host adds to its surface and bed gradients. `state` holds only the periodic
+part of the geometry: `z_srf = 0`, `z_bed = −H`. The basal friction
+coefficient is
 
 ```
 β(x, y) = β₀ + β_amp · sin(2π x / L) · sin(2π y / L)        [Pa yr m⁻¹]
 ```
 
 [`state`](@ref) returns an isothermal uniform slab (`H_ice = 1000 m`),
-the sloping bed, a very negative sea level to force grounded ice,
+the flat bed, a very negative sea level to force grounded ice,
 zero SMB, and arbitrary `T_srf = 263.15 K` / `Q_geo = 50 mW m⁻²`. The
 basal-friction field `β` is **not** returned in `state` — it is a
 host-side field; use the helper `IceSheetBenchmarks._hom_c_beta(b, x, y)`

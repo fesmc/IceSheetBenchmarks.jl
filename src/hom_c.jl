@@ -12,10 +12,15 @@
 #   alpha = 0.1° = 0.1 π / 180 rad
 #   omega = 2π / L                 # β-perturbation wavenumber
 #
-#   z_srf = -x · tan(alpha)
-#   z_bed =  z_srf - 1000 m         (uniform 1000 m thick slab over a
-#                                    sloping bed)
+#   z_srf = 0
+#   z_bed = -1000 m                 (uniform 1000 m thick slab)
 #   H_ice = 1000 m
+#
+# The inclined plane z = -x · tan(alpha) is not periodic, so (as in the
+# Fortran reference) it is carried as a uniform background slope,
+# `background_slope(b) = (-tan(alpha), 0)`, which the host adds to its
+# surface and bed gradients (Yelmo `ytopo.slope_bg_x`). z_srf and z_bed
+# hold only the periodic part of the geometry.
 #
 # Basal friction (Pa·yr·m^-1):
 #
@@ -126,7 +131,7 @@ end
 Analytical IC at time `t`. Returns a NamedTuple with:
   - `xc`, `yc`     — grid axes (metres).
   - `H_ice`        — 1000 m uniform.
-  - `z_bed`        — `-x · tan α - H` (linear in x).
+  - `z_bed`        — `-H` (the bed tilt is [`background_slope`](@ref)).
   - `z_sl`         — −10 000 m (matches `yelmo_ismiphom.f90:180`,
                      forcing all ice to be grounded so the bed slope
                      drives the surface slope and the driving stress
@@ -144,8 +149,7 @@ part of the schema-routed Center-aligned state). Use
 function state(b::HOMCBenchmark, t::Real)
     Nx, Ny = length(b.xc), length(b.yc)
     H_ice = fill(b.H, Nx, Ny)
-    z_srf = [-b.xc[i] * tan(b.alpha_rad) for i in 1:Nx, j in 1:Ny]
-    z_bed = z_srf .- b.H
+    z_bed = fill(-b.H, Nx, Ny)
     z_sl  = fill(-10_000.0, Nx, Ny)   # force grounded ice (Fortran convention)
     smb   = zeros(Nx, Ny)
     Tsrf  = fill(263.15, Nx, Ny)
@@ -229,7 +233,7 @@ function write_fixture!(b::HOMCBenchmark, path::AbstractString;
         zb = defVar(ds, "z_bed", Float64, ("xc", "yc"))
         zb[:, :] = s.z_bed
         zb.attrib["units"]     = "m"
-        zb.attrib["long_name"] = "Bedrock elevation (sloping bed, alpha=0.1°)"
+        zb.attrib["long_name"] = "Bedrock elevation (tilt carried by slope_bg_x = -tan(alpha))"
 
         zslv = defVar(ds, "z_sl", Float64, ("xc", "yc"))
         zslv[:, :] = s.z_sl
@@ -266,6 +270,13 @@ function write_fixture!(b::HOMCBenchmark, path::AbstractString;
 
     return [path]
 end
+
+"""
+    background_slope(b::HOMCBenchmark) -> (-tan(α), 0.0)
+
+The inclined plane `z = -x · tan α`, carried as a background slope.
+"""
+background_slope(b::HOMCBenchmark) = (-tan(b.alpha_rad), 0.0)
 
 # Closed-form β at an (x_m, y_m) point (metres):
 #   β = β₀ + β_amp · sin(2π x / L) · sin(2π y / L)

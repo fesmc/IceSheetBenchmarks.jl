@@ -46,6 +46,13 @@ returned on the face-staggered shapes `(Nx+1, Ny)` and `(Nx, Ny+1)`.
 Only implemented when an analytical solution exists (currently the
 Bueler / Halfar dome). The fallback throws an informative error.
 
+### `background_slope(b)` (optional)
+
+Uniform background slope `(sx, sy)` (m/m) of a tilted periodic domain,
+not contained in the `z_srf`/`z_bed` of `state`. The host adds it to its
+surface and bed gradients (Yelmo: `ytopo.slope_bg_x/y`). Defaults to
+`(0.0, 0.0)`; ISMIP-HOM C returns `(−tan α, 0)`.
+
 ## Calving-law hooks
 
 Two model-agnostic skeletons are declared in the core module for the
