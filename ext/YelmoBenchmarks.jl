@@ -5,10 +5,10 @@ module YelmoBenchmarks
 # that builds a YelmoModel directly from a benchmark spec (no NetCDF
 # round-trip).
 
-using IceSheetBenchmarks: IceSheetBenchmarks, AbstractBenchmark, state
+using IceSheetBenchmarks: IceSheetBenchmarks, AbstractBenchmark, state, background_slope
 using Yelmo
 using Yelmo: YelmoConstants, MASK_ICE_DYNAMIC, resolve_boundaries
-using Yelmo.YelmoPar: YelmoParameters
+using Yelmo.YelmoPar: YelmoParameters, ytopo_params, with_ported_options
 using Oceananigans
 using Oceananigans: interior
 using Oceananigans.Fields: AbstractField
@@ -82,7 +82,7 @@ end
                      alias::String = "...",
                      rundir::String = "./",
                      p = nothing,
-                     c::YelmoConstants = YelmoConstants(),
+                     c = nothing,
                      boundaries = :bounded) -> YelmoModel
 
 Build a `YelmoModel` directly from the analytical state of `b` at
@@ -93,17 +93,26 @@ group via the same allocation path the file-based constructor uses.
 Coordinate-axis entries in the state NamedTuple (`:xc`, `:yc`,
 `:zeta_ac`, `:zeta_rock_ac`) drive grid construction; defaults fall
 back to `b.xc / b.yc` and uniform 11-/5-point sigma layers.
+
+Without `p`, the parameters are the Yelmo defaults with the
+`background_slope(b)` as `ytopo.slope_bg_x/y`, passed through
+`with_ported_options` (options YelmoModel does not implement yet are
+replaced and logged). A given `p` is used as is. Without `c`, the
+constants are `YelmoConstants(p)` (the `yelmo.phys_const` group).
 """
 function Yelmo.YelmoModel(b::AbstractBenchmark, t::Real;
                           alias::String = _default_alias(b, t),
                           rundir::String = "./",
                           p = nothing,
-                          c::YelmoConstants = YelmoConstants(),
+                          c::Union{Nothing,YelmoConstants} = nothing,
                           boundaries = :bounded)
 
     if p === nothing
-        p = YelmoParameters(alias)
+        sx, sy = background_slope(b)
+        p = with_ported_options(YelmoParameters(alias;
+                ytopo = ytopo_params(slope_bg_x = sx, slope_bg_y = sy)))
     end
+    c === nothing && (c = YelmoConstants(p))
 
     s = state(b, Float64(t))
 

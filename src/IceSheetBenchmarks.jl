@@ -17,6 +17,9 @@ using NCDatasets
 #     depth-averaged ice-velocity field `(ux_bar, uy_bar)`, when one
 #     exists (e.g. Halfar dome). Benchmarks without an analytical
 #     velocity solution leave this unimplemented.
+#   - `background_slope(b)` (optional) — uniform background slope of a
+#     tilted periodic domain, not contained in `state`'s geometry.
+#     Defaults to no slope.
 # ----------------------------------------------------------------------
 
 """
@@ -66,6 +69,17 @@ analytical_velocity(b::AbstractBenchmark, t::Real) = error(
     "Use a concrete benchmark subtype with a closed-form velocity solution.")
 
 """
+    background_slope(b::AbstractBenchmark) -> (sx, sy)
+
+Uniform background slope (m/m) of a tilted periodic domain: the tilt
+that is *not* contained in the `z_srf`/`z_bed` of [`state`](@ref), which
+hold only the periodic part of the geometry. A host adds it to its
+surface and bed gradients (Yelmo: `ytopo.slope_bg_x/y`). Default
+`(0.0, 0.0)`.
+"""
+background_slope(b::AbstractBenchmark) = (0.0, 0.0)
+
+"""
     calvmip_exp1!(cr_x, cr_y, u_bar, v_bar, H_ice, f_ice, lsf, time;
                   xc, yc, r_lim = 750e3)
 
@@ -86,7 +100,7 @@ Skeleton declared here so hosts can extend it.
 function calvmip_exp2! end
 
 export AbstractBenchmark
-export state, write_fixture!, analytical_velocity
+export state, write_fixture!, analytical_velocity, background_slope
 export calvmip_exp1!, calvmip_exp2!
 
 include("bueler.jl")

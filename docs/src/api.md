@@ -9,6 +9,7 @@ AbstractBenchmark
 state
 write_fixture!
 analytical_velocity
+background_slope
 ```
 
 ## Calving-law hooks
